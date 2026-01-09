@@ -1,0 +1,135 @@
+name: Build TVBox APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: '选择构建模式'
+        required: true
+        default: 'normal-only'
+        type: choice
+        options:
+          - normal-only
+          - python-only
+          - all
+
+jobs:
+  build-normal:
+    name: Build Normal Variants
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name != 'workflow_dispatch' || 
+      github.event.inputs.build_mode == 'normal-only' || 
+      github.event.inputs.build_mode == 'all'
+    
+    strategy:
+      matrix:
+        abi: [armeabi, arm64]
+        brand: [generic, hisense]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK 11
+      uses: actions/setup-java@v4
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+    
+    - name: Build Normal APK - ${{ matrix.abi }}-${{ matrix.brand }}
+      run: ./gradlew assemble${{ matrix.abi }}${{ matrix.brand }}normalRelease --stacktrace
+    
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: TVBox-${{ matrix.abi }}-${{ matrix.brand }}-java
+        path: app/build/outputs/apk/${{ matrix.abi }}${{ matrix.brand }}normal/release/*.apk
+        retention-days: 30
+
+  build-python:
+    name: Build Python Variants
+    runs-on: ubuntu-latest
+    if: |
+      github.event.inputs.build_mode == 'python-only' || 
+      github.event.inputs.build_mode == 'all'
+    
+    strategy:
+      matrix:
+        abi: [armeabi, arm64]
+        brand: [generic, hisense]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK 11
+      uses: actions/setup-java@v4
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+        cache: gradle
+        
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.8'
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install lxml ujson pyquery requests jsonpath cachetools pycryptodome beautifulsoup4
+    
+    - name: Fix pyramid build.gradle Python path
+      run: |
+        sed -i 's|buildPython("D:/Programs/Python/Python38/python.exe")|buildPython(System.getenv("pythonHome") + "/bin/python")|g' pyramid/build.gradle
+    
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+    
+    - name: Build Python APK - ${{ matrix.abi }}-${{ matrix.brand }}
+      run: ./gradlew assemble${{ matrix.abi }}${{ matrix.brand }}pythonRelease --stacktrace
+    
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: TVBox-${{ matrix.abi }}-${{ matrix.brand }}-python
+        path: app/build/outputs/apk/${{ matrix.abi }}${{ matrix.brand }}python/release/*.apk
+        retention-days: 30
+
+  build-debug:
+    name: Build Debug (Quick Test)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK 11
+      uses: actions/setup-java@v4
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+    
+    - name: Build Debug APK
+      run: ./gradlew assembleArm64GenericnormalDebug --stacktrace
+    
+    - name: Upload Debug APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: TVBox-debug
+        path: app/build/outputs/apk/**/debug/*.apk
+        retention-days: 7
